@@ -25,8 +25,8 @@ CompanionHR uses AI in two distinct ways, and it's worth being precise about whi
 The chat tab (`src/views/AIChatAssistant.tsx`) calls the real Anthropic Claude API directly from the browser via the official `@anthropic-ai/sdk` (`src/utils/claudeClient.ts`), using `claude-opus-4-8`. There is no backend proxy — the request goes straight from the user's browser to Anthropic's API using an API key the user supplies themselves (see [Limitations](#limitations-and-future-improvements) for why).
 
 Because sending all 25,000 rows on every message would be slow and expensive, the model is given:
-- A compact **data digest** (`src/utils/dataDigest.ts`) — aggregated stats per department × month, per grade, plus a few notable individual records — injected into the system prompt as baseline grounding.
-- A **tool**, `query_employees` (`src/utils/employeeQuery.ts`), that the model can call to search the *full* dataset with arbitrary filters (department, grade, salary/performance/attrition/overtime ranges, promotion eligibility, name/ID lookup) whenever a question needs row-level data the digest doesn't cover.
+- A compact **data digest** (`src/utils/dataDigest.ts`) — aggregated stats per department × month, per grade, and per office/location (latest month), plus a few notable individual records — injected into the system prompt as baseline grounding.
+- A **tool**, `query_employees` (`src/utils/employeeQuery.ts`), that the model can call to search the *full* dataset with arbitrary filters (department, location, grade, salary/performance/attrition/overtime/absence ranges, promotion eligibility, name/ID lookup) whenever a question needs row-level data the digest doesn't cover.
 
 `claudeClient.ts` runs a small agentic loop: it sends the conversation, and if Claude responds with a tool call, the app executes `query_employees` against the in-memory dataset, feeds the JSON results back to Claude, and repeats (up to 5 rounds) until Claude produces a final text answer. This lets the model answer compound, cross-tabulated questions (e.g. "which employees have high performance but low compensation?") by issuing one or more targeted, self-directed queries instead of being limited to whatever was pre-aggregated.
 
@@ -40,11 +40,11 @@ These are fast, free, and fully deterministic, but they are pattern-matching/heu
 
 ## Data ingestion approach
 
-- **Source**: a synthetic dataset (`generate_dataset.py`) of 6,250 employees × 4 months (Jan–Apr) = 25,000 rows, with grade-scaled salaries, department-skewed overtime, and performance/attrition figures correlated the way real HR data tends to be.
+- **Source**: a synthetic dataset (`generate_dataset.py`) of 6,250 employees × 4 months (Jan–Apr) = 25,000 rows, with grade-scaled salaries, department-skewed overtime, office/location assignment, monthly absence tracking, and performance/attrition figures correlated the way real HR data tends to be.
 - **Parsing**: 100% client-side via PapaParse. `src/hooks/useHRData.tsx` fetches `/hr_dataset.csv` (or a user-uploaded file) and parses it in the browser — the raw CSV never touches a server.
-- **Validation**: every row is checked against a fixed set of required columns (`EmployeeID`, `Name`, `Department`, `Grade`, `MonthlySalary`, `OvertimeHours`, `OvertimePay`, `PerformanceRating`, `AttritionRiskScore`, `PromotionEligible`, `Month`); a CSV missing any of them is rejected with an error rather than silently producing broken rows.
+- **Validation**: every row is checked against a fixed set of required columns (`EmployeeID`, `Name`, `Department`, `Grade`, `MonthlySalary`, `OvertimeHours`, `OvertimePay`, `PerformanceRating`, `AttritionRiskScore`, `PromotionEligible`, `Month`); a CSV missing any of them is rejected with an error rather than silently producing broken rows. `Location` and `AbsenceDays` are read if present but are **optional** — a CSV without them still uploads fine (missing locations fall back to "Unspecified", missing absences default to 0), so older or third-party datasets keep working unchanged.
 - **Coercion**: each raw (string) CSV row is converted into a strongly-typed `HRRecord` (numbers parsed, `PromotionEligible` normalized to a boolean, `Department`/`Grade`/`Month` cast to their union types) — see `src/types.ts` for the shape.
-- **Scoping**: a global month selector (in the header) filters the in-memory dataset down to a single month or "All Months" (`filteredRecords`); every view/chart/table reads from this shared, already-scoped array via the `useHRData()` context.
+- **Scoping**: a global month selector *and* office/location selector (both in the header) filter the in-memory dataset down (`filteredRecords`); every view/chart/table reads from this shared, already-scoped array via the `useHRData()` context.
 - **Re-ingestion**: uploading a new CSV or clicking "Reload default dataset" replaces the in-memory dataset entirely — there is no merge/append logic and nothing is persisted between page reloads.
 
 ## Prompt strategy

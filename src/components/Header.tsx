@@ -1,6 +1,7 @@
 import { Menu } from "lucide-react";
 import { UploadCSV } from "./UploadCSV";
 import { MonthSelect } from "./MonthSelect";
+import { LocationSelect } from "./LocationSelect";
 
 /**
  * Props for `Header`.
@@ -17,8 +18,8 @@ interface HeaderProps {
 
 /**
  * The top bar shown above every view: a mobile menu toggle, the current
- * page's title/subtitle, and the shared month selector + CSV upload controls
- * (which apply globally regardless of which view is active).
+ * page's title/subtitle, and the shared month/location selectors + CSV
+ * upload controls (which apply globally regardless of which view is active).
  *
  * @param props - HeaderProps - see `HeaderProps` for each field's meaning.
  */
@@ -37,6 +38,7 @@ export function Header({ title, subtitle, onOpenMobile }: HeaderProps) {
       </div>
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <MonthSelect />
+        <LocationSelect />
         <UploadCSV />
       </div>
     </header>

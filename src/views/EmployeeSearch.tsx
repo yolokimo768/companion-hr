@@ -9,6 +9,8 @@ import { DEPARTMENTS, GRADES, MONTH_ORDER, type HRRecord } from "../types";
 const PAGE_SIZE = 50;
 /** Number of `<th>`/`<td>` columns in the results table, used for the colSpan of the expanded-detail and empty-state rows. */
 const COLUMN_COUNT = 7;
+/** Absence days in a month at or above this value is flagged as an attendance issue. */
+const ATTENDANCE_ISSUE_THRESHOLD = 5;
 
 /**
  * Builds a stable, unique React key (and row-selection identifier) for a
@@ -29,26 +31,28 @@ function rowKey(r: HRRecord): string {
  * compensation trend.
  */
 export function EmployeeSearch() {
-  const { filteredRecords, records } = useHRData();
+  const { filteredRecords, records, availableLocations } = useHRData();
   const [query, setQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState<string>("All");
+  const [locationFilter, setLocationFilter] = useState<string>("All");
   const [gradeFilter, setGradeFilter] = useState<string>("All");
   const [page, setPage] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  // `filteredRecords` (already scoped to the header's month selector) further
-  // narrowed by the free-text search box and the department/grade dropdowns.
+  // `filteredRecords` (already scoped to the header's month + office selectors)
+  // further narrowed by the free-text search box and the department/location/grade dropdowns.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return filteredRecords.filter((r) => {
       if (deptFilter !== "All" && r.Department !== deptFilter) return false;
+      if (locationFilter !== "All" && r.Location !== locationFilter) return false;
       if (gradeFilter !== "All" && r.Grade !== gradeFilter) return false;
       if (q && !r.Name.toLowerCase().includes(q) && !r.EmployeeID.toLowerCase().includes(q)) {
         return false;
       }
       return true;
     });
-  }, [filteredRecords, query, deptFilter, gradeFilter]);
+  }, [filteredRecords, query, deptFilter, locationFilter, gradeFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -121,6 +125,16 @@ export function EmployeeSearch() {
           ))}
         </select>
         <select
+          value={locationFilter}
+          onChange={(e) => resetPage(() => setLocationFilter(e.target.value))}
+          className="rounded-md border border-slate-700 bg-slate-900/70 px-2.5 py-2 text-sm text-slate-200"
+        >
+          <option value="All">All Offices</option>
+          {availableLocations.map((loc) => (
+            <option key={loc} value={loc}>{loc}</option>
+          ))}
+        </select>
+        <select
           value={gradeFilter}
           onChange={(e) => resetPage(() => setGradeFilter(e.target.value))}
           className="rounded-md border border-slate-700 bg-slate-900/70 px-2.5 py-2 text-sm text-slate-200"
@@ -165,7 +179,10 @@ export function EmployeeSearch() {
                           <span className="sm:hidden text-slate-600"> &middot; {r.Department}</span>
                         </div>
                       </td>
-                      <td className="hidden sm:table-cell py-2 pr-3 text-slate-400">{r.Department}</td>
+                      <td className="hidden sm:table-cell py-2 pr-3 text-slate-400">
+                        <div>{r.Department}</div>
+                        <div className="text-xs text-slate-500">{r.Location}</div>
+                      </td>
                       <td className="hidden md:table-cell py-2 pr-3 text-slate-400">{r.Grade}</td>
                       <td className="py-2 pr-3 text-right text-slate-200 tabular-nums">
                         {formatCurrency(r.MonthlySalary)}
@@ -178,6 +195,11 @@ export function EmployeeSearch() {
                         {r.AttritionRiskScore >= 76 && (
                           <span className="ml-1 inline-block">
                             <StatusBadge label="High Risk" tone="danger" />
+                          </span>
+                        )}
+                        {r.AbsenceDays >= ATTENDANCE_ISSUE_THRESHOLD && (
+                          <span className="ml-1 inline-block">
+                            <StatusBadge label="Attendance" tone="warning" />
                           </span>
                         )}
                       </td>
@@ -274,7 +296,7 @@ function EmployeeDetailPanel({ employee, history, onClose }: EmployeeDetailPanel
         <div>
           <h3 className="text-base font-semibold text-slate-50">{employee.Name}</h3>
           <p className="text-xs text-slate-500">
-            {employee.EmployeeID} &middot; {employee.Department} &middot; {employee.Grade}
+            {employee.EmployeeID} &middot; {employee.Department} &middot; {employee.Location} &middot; {employee.Grade}
           </p>
         </div>
         <button onClick={onClose} className="text-slate-500 hover:text-slate-200">
@@ -287,6 +309,9 @@ function EmployeeDetailPanel({ employee, history, onClose }: EmployeeDetailPanel
         {employee.AttritionRiskScore >= 76 && <StatusBadge label="High Attrition Risk" tone="danger" />}
         {employee.AttritionRiskScore <= 25 && <StatusBadge label="Low Attrition Risk" tone="info" />}
         {employee.PerformanceRating >= 4.5 && <StatusBadge label="Top Performer" tone="success" />}
+        {employee.AbsenceDays >= ATTENDANCE_ISSUE_THRESHOLD && (
+          <StatusBadge label="Attendance Issue" tone="warning" />
+        )}
       </div>
 
       <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-6">
@@ -307,6 +332,16 @@ function EmployeeDetailPanel({ employee, history, onClose }: EmployeeDetailPanel
             <dt className="text-slate-500">Total Compensation</dt>
             <dd className="font-semibold text-slate-50 tabular-nums">
               {formatCurrency(employee.MonthlySalary + employee.OvertimePay)}
+            </dd>
+          </div>
+          <div className="flex justify-between border-b border-slate-800 pb-2">
+            <dt className="text-slate-500">Absence Days</dt>
+            <dd
+              className={`font-medium tabular-nums ${
+                employee.AbsenceDays >= ATTENDANCE_ISSUE_THRESHOLD ? "text-amber-400" : "text-slate-100"
+              }`}
+            >
+              {employee.AbsenceDays} {employee.AbsenceDays === 1 ? "day" : "days"} this month
             </dd>
           </div>
           <div className="flex justify-between border-b border-slate-800 pb-2">

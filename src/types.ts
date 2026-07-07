@@ -34,10 +34,12 @@ export type MonthName = "Jan" | "Feb" | "Mar" | "Apr";
  * - EmployeeID: string - stable unique identifier for the employee (e.g. "EMP00123"), constant across all 4 months for the same person.
  * - Name: string - the employee's display name.
  * - Department: Department - which of the 6 departments the employee belongs to.
+ * - Location: string - which office the employee works out of (e.g. "New York", "Remote"). Constant across all 4 months for the same person, like Department. Typed as a plain string (not a closed union) since it's an optional CSV column — an uploaded dataset may use any office names, or omit the column entirely.
  * - Grade: Grade - the employee's pay grade (G1-G5).
  * - MonthlySalary: number - base monthly salary in dollars for this month (excludes overtime).
  * - OvertimeHours: number - hours of overtime logged in this month.
  * - OvertimePay: number - dollar amount paid for the overtime hours in this month.
+ * - AbsenceDays: number - days absent in this month, used to flag attendance issues. Like Location, this is an optional CSV column.
  * - PerformanceRating: number - performance score on a 1.0-5.0 scale for this month.
  * - AttritionRiskScore: number - modeled likelihood of the employee leaving, on a 1-100 scale.
  * - PromotionEligible: boolean - whether the employee currently qualifies for promotion.
@@ -47,10 +49,12 @@ export interface HRRecord {
   EmployeeID: string;
   Name: string;
   Department: Department;
+  Location: string;
   Grade: Grade;
   MonthlySalary: number;
   OvertimeHours: number;
   OvertimePay: number;
+  AbsenceDays: number;
   PerformanceRating: number;
   AttritionRiskScore: number;
   PromotionEligible: boolean;

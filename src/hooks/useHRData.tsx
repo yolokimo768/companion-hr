@@ -14,17 +14,26 @@ import { MONTH_ORDER } from "../types";
 /** The month-selector value: either one specific month, or "All" to include every month's rows. */
 export type MonthFilter = MonthName | "All";
 
+/** The office/location-selector value: either one specific location, or "All" to include every location's rows. */
+export type LocationFilter = string | "All";
+
+/** Fallback value used for `Location` when a loaded CSV doesn't include that (optional) column, so older or third-party datasets keep working. */
+const UNSPECIFIED_LOCATION = "Unspecified";
+
 /**
  * The shape of the shared HR data context that every view reads from.
  *
- * - records: HRRecord[] - every row currently loaded, unfiltered by month.
- * - filteredRecords: HRRecord[] - `records` narrowed to `selectedMonth` (or all of `records` if `selectedMonth` is "All").
+ * - records: HRRecord[] - every row currently loaded, unfiltered by month or location.
+ * - filteredRecords: HRRecord[] - `records` narrowed to `selectedMonth` and `selectedLocation` (either can be "All" to skip that filter).
  * - loading: boolean - true while a CSV file is being parsed.
  * - error: string | null - a human-readable message if the last parse attempt failed, otherwise null.
  * - fileName: string - the display name of the currently-loaded CSV file.
  * - availableMonths: MonthName[] - the distinct months found in `records`, in chronological order.
  * - selectedMonth: MonthFilter - the month currently selected in the header's month dropdown.
  * - setSelectedMonth: (m: MonthFilter) => void - updates `selectedMonth`.
+ * - availableLocations: string[] - the distinct office/location values found in `records`, alphabetically sorted.
+ * - selectedLocation: LocationFilter - the office currently selected in the header's location dropdown.
+ * - setSelectedLocation: (l: LocationFilter) => void - updates `selectedLocation`.
  * - loadFile: (file: File) => void - parses a user-supplied CSV file and replaces `records` with its contents.
  * - reloadDefault: (void) => void - re-fetches and parses the bundled `/hr_dataset.csv`, discarding any user-uploaded file.
  */
@@ -37,13 +46,16 @@ interface HRDataContextValue {
   availableMonths: MonthName[];
   selectedMonth: MonthFilter;
   setSelectedMonth: (m: MonthFilter) => void;
+  availableLocations: string[];
+  selectedLocation: LocationFilter;
+  setSelectedLocation: (l: LocationFilter) => void;
   loadFile: (file: File) => void;
   reloadDefault: () => void;
 }
 
 const HRDataContext = createContext<HRDataContextValue | null>(null);
 
-/** Column names every uploaded CSV must contain; anything missing causes the upload to be rejected with an error message instead of silently producing broken rows. */
+/** Column names every uploaded CSV must contain; anything missing causes the upload to be rejected with an error message instead of silently producing broken rows. `Location` and `AbsenceDays` are intentionally NOT required, so existing/third-party CSVs without those columns still upload fine. */
 const REQUIRED_COLUMNS = [
   "EmployeeID",
   "Name",
@@ -72,10 +84,12 @@ function coerceRow(row: Record<string, string>): HRRecord | null {
     EmployeeID: row.EmployeeID,
     Name: row.Name,
     Department: row.Department as HRRecord["Department"],
+    Location: row.Location?.trim() || UNSPECIFIED_LOCATION,
     Grade: row.Grade as HRRecord["Grade"],
     MonthlySalary: Number(row.MonthlySalary) || 0,
     OvertimeHours: Number(row.OvertimeHours) || 0,
     OvertimePay: Number(row.OvertimePay) || 0,
+    AbsenceDays: Number(row.AbsenceDays) || 0,
     PerformanceRating: Number(row.PerformanceRating) || 0,
     AttritionRiskScore: Number(row.AttritionRiskScore) || 0,
     PromotionEligible:
@@ -98,6 +112,7 @@ export function HRDataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("hr_dataset.csv");
   const [selectedMonth, setSelectedMonth] = useState<MonthFilter>("All");
+  const [selectedLocation, setSelectedLocation] = useState<LocationFilter>("All");
 
   /**
    * Validates a completed PapaParse result against `REQUIRED_COLUMNS`, converts
@@ -225,13 +240,32 @@ export function HRDataProvider({ children }: { children: ReactNode }) {
     );
   }, [availableMonths]);
 
-  // `records` narrowed down to the currently-selected month (or every record,
-  // if "All Months" is selected). This is the array almost every view/chart
-  // actually reads from.
+  // The distinct office/location values present in `records`, alphabetized.
+  // Unlike months, there's no fixed canonical ordering for locations, and a
+  // custom upload may use entirely different office names.
+  const availableLocations = useMemo(() => {
+    const set = new Set(records.map((r) => r.Location));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [records]);
+
+  // Whenever a new dataset loads, keep the current location selection if it's
+  // still valid for the new data, otherwise reset to "All" (unlike months,
+  // there's no single "most recent" location to fall back to).
+  useEffect(() => {
+    if (availableLocations.length === 0) return;
+    setSelectedLocation((prev) => (prev === "All" || availableLocations.includes(prev) ? prev : "All"));
+  }, [availableLocations]);
+
+  // `records` narrowed down to the currently-selected month and location
+  // ("All" skips that particular filter). This is the array almost every
+  // view/chart actually reads from.
   const filteredRecords = useMemo(() => {
-    if (selectedMonth === "All") return records;
-    return records.filter((r) => r.Month === selectedMonth);
-  }, [records, selectedMonth]);
+    return records.filter(
+      (r) =>
+        (selectedMonth === "All" || r.Month === selectedMonth) &&
+        (selectedLocation === "All" || r.Location === selectedLocation)
+    );
+  }, [records, selectedMonth, selectedLocation]);
 
   const value: HRDataContextValue = {
     records,
@@ -242,6 +276,9 @@ export function HRDataProvider({ children }: { children: ReactNode }) {
     availableMonths,
     selectedMonth,
     setSelectedMonth,
+    availableLocations,
+    selectedLocation,
+    setSelectedLocation,
     loadFile,
     reloadDefault,
   };

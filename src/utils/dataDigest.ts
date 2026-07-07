@@ -14,6 +14,15 @@ interface MonthDeptSlice {
   promotionEligibleCount: number;
 }
 
+interface LocationSlice {
+  location: string;
+  headcount: number;
+  avgSalary: number;
+  totalOvertimeHours: number;
+  avgAbsenceDays: number;
+  avgAttritionRisk: number;
+}
+
 interface DataDigest {
   totalRecords: number;
   uniqueEmployees: number;
@@ -22,6 +31,10 @@ interface DataDigest {
   monthsCovered: MonthName[];
   byMonth: Record<string, MonthDeptSlice[]>;
   gradeSalary: { grade: string; avgSalary: number; medianSalary: number; count: number }[];
+  // Snapshot (latest month only, to keep the digest compact) comparing pay,
+  // overtime, and attendance across offices — answers "compare compensation
+  // between different offices/locations" without needing a tool call.
+  byLocation: LocationSlice[];
   notable: {
     highestPaid: { name: string; department: string; grade: string; salary: number; month: string };
     highestAttritionRisk: { name: string; department: string; riskScore: number; month: string };
@@ -57,6 +70,22 @@ export function buildDataDigest(records: HRRecord[]): string {
     }).filter((d) => d.headcount > 0);
   }
 
+  const latestMonth = monthsPresent[monthsPresent.length - 1];
+  const latestMonthRecords = records.filter((r) => r.Month === latestMonth);
+  const locations = Array.from(new Set(records.map((r) => r.Location))).sort();
+  const byLocation: LocationSlice[] = locations.map((location) => {
+    const locRecords = latestMonthRecords.filter((r) => r.Location === location);
+    const headcount = locRecords.length;
+    return {
+      location,
+      headcount,
+      avgSalary: headcount ? Math.round(mean(locRecords.map((r) => r.MonthlySalary))) : 0,
+      totalOvertimeHours: locRecords.reduce((s, r) => s + r.OvertimeHours, 0),
+      avgAbsenceDays: headcount ? Number(mean(locRecords.map((r) => r.AbsenceDays)).toFixed(1)) : 0,
+      avgAttritionRisk: headcount ? Number(mean(locRecords.map((r) => r.AttritionRiskScore)).toFixed(1)) : 0,
+    };
+  });
+
   const gradeSalary = GRADES.map((grade) => {
     const gradeRecords = records.filter((r) => r.Grade === grade);
     const salaries = gradeRecords.map((r) => r.MonthlySalary);
@@ -80,6 +109,7 @@ export function buildDataDigest(records: HRRecord[]): string {
     monthsCovered: monthsPresent,
     byMonth,
     gradeSalary,
+    byLocation,
     notable: {
       highestPaid: {
         name: highestPaidRecord.Name,

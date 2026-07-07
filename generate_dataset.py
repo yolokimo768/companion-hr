@@ -8,9 +8,16 @@ import random
 
 random.seed(42)
 
+# Separate RNG streams for the fields added after the original dataset was
+# designed, so regenerating the file doesn't shift the shared `random`
+# sequence and change every pre-existing column's values.
+location_rng = random.Random(43)
+absence_rng = random.Random(44)
+
 MONTHS = ["Jan", "Feb", "Mar", "Apr"]
 DEPARTMENTS = ["Engineering", "Operations", "Finance", "Sales", "Customer Success", "HR"]
 GRADES = ["G1", "G2", "G3", "G4", "G5"]
+LOCATIONS = ["New York", "London", "Toronto", "Singapore", "Remote"]
 
 NUM_EMPLOYEES = 6250  # x4 months = 25,000 rows
 
@@ -107,7 +114,7 @@ def build_employee(idx: int):
     Returns:
         dict: the employee's identity and baseline traits used later to
             derive every month's row -
-            EmployeeID (str), Name (str), Department (str), Grade (str),
+            EmployeeID (str), Name (str), Department (str), Location (str), Grade (str),
             base_salary (float) - the employee's baseline monthly salary before month-specific raise factors are applied,
             base_performance (float) - the employee's baseline performance rating (1.0-5.0) before month-to-month drift is applied,
             attrition_bias (float) - a personal attrition tendency in [0, 1] (0 = low risk, 1 = high risk) used as an input to each month's risk score.
@@ -118,10 +125,15 @@ def build_employee(idx: int):
     base_salary = round(random.uniform(lo, hi), 2)
     base_performance = clamp(random.gauss(3.5, 0.65), 1.0, 5.0)
     base_attrition_bias = random.uniform(0, 1)  # personal tendency, 0=low risk, 1=high risk
+    # Office is assigned once per employee (like Department/Grade) and stays
+    # constant across their 4 monthly rows. Drawn from a dedicated RNG stream
+    # so it doesn't perturb any of the other fields' random draws.
+    location = location_rng.choice(LOCATIONS)
     return {
         "EmployeeID": f"EMP{idx:05d}",
         "Name": f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}",
         "Department": dept,
+        "Location": location,
         "Grade": grade,
         "base_salary": base_salary,
         "base_performance": base_performance,
@@ -138,7 +150,9 @@ def main():
     department range and that month's overtime multiplier, drifts the
     performance rating slightly from the employee's baseline, derives an
     attrition risk score from the employee's bias plus performance/overtime
-    penalties and random noise, and flags promotion eligibility from the
+    penalties and random noise, draws that month's absence days from a
+    right-skewed distribution (most employees have few or no absences, a
+    smaller number run higher), and flags promotion eligibility from the
     performance rating. All 25,000 resulting rows (NUM_EMPLOYEES x len(MONTHS))
     are written to hr_dataset.csv with a header row. Takes no parameters and
     returns nothing; its output is the CSV file written to disk (plus a
@@ -170,14 +184,19 @@ def main():
 
             promotion_eligible = performance_rating > 4.2
 
+            # Right-skewed: mean 1.5, stdev 1.8, clamped to [0, 10] days/month.
+            absence_days = int(clamp(round(absence_rng.gauss(1.5, 1.8)), 0, 10))
+
             rows.append({
                 "EmployeeID": emp["EmployeeID"],
                 "Name": emp["Name"],
                 "Department": dept,
+                "Location": emp["Location"],
                 "Grade": emp["Grade"],
                 "MonthlySalary": f"{monthly_salary:.2f}",
                 "OvertimeHours": overtime_hours,
                 "OvertimePay": f"{overtime_pay:.2f}",
+                "AbsenceDays": absence_days,
                 "PerformanceRating": f"{performance_rating:.1f}",
                 "AttritionRiskScore": attrition_risk,
                 "PromotionEligible": str(promotion_eligible).upper(),
@@ -185,8 +204,8 @@ def main():
             })
 
     fieldnames = [
-        "EmployeeID", "Name", "Department", "Grade", "MonthlySalary",
-        "OvertimeHours", "OvertimePay", "PerformanceRating",
+        "EmployeeID", "Name", "Department", "Location", "Grade", "MonthlySalary",
+        "OvertimeHours", "OvertimePay", "AbsenceDays", "PerformanceRating",
         "AttritionRiskScore", "PromotionEligible", "Month",
     ]
 

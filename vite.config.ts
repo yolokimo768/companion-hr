@@ -11,5 +11,7 @@ export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
   server: {
     host: true,
+    port: Number(process.env.PORT) || 5173,
+    strictPort: !!process.env.PORT,
   },
 }))
