@@ -3,6 +3,7 @@
 An AI-powered HR compensation assistant: a single-page React app that processes an entire 25,000-row employee dataset **entirely client-side** — no backend, no database. It ships with five analytics views (Payroll Dashboard, Employee Search, Scenario Simulator, Executive Summary, AI Recommendations) plus an AI HR Assistant chat backed by the Claude API.
 
 Live demo: https://yolokimo768.github.io/companion-hr/
+Demo video: [demo/companion-hr-demo.mp4](demo/companion-hr-demo.mp4)
 
 ## Getting started
 
